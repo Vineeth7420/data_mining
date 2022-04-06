@@ -1,0 +1,356 @@
+---
+title: "CMM 510 Data Mining - Resit"
+author: "Vineeth Chimbili"
+date: "23/07/2021"
+output:
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Importing the data
+
+We start with downloading the data files propertyMedium.csv and propertyTest.csv from CampusMoodle, which we load into RStudio. 
+
+```{r cars}
+# setting the working directory to import the data
+# setwd('SET WORKING DIRECTORY')
+
+# importing the data files propertyMedium.csv and propertyTest.csv
+propertyMedium <- read.csv('propertyMedium.csv')
+propertyTest <- read.csv('propertyTest.csv')
+
+# setting the seed value
+set.seed(123)
+```
+
+## Question 1
+
+We use univariate statistics to explore the propertyMedium data. By skimming the data, we observe that there are a few missing values for the variables estate_type. The second table shows the main summary statistics for the numerical variables, such as the mean value, standard deviation, and the quantiles. It also shows a mini-histogram to evaluate the distribution of the data.
+
+We show three visualization plots. The first two plots visualize the numerical variables percent_mortgage and square_metres against price_paid, for every property_type. The visualization shows what is the relationship between the different variables, and how the relationship is different between different property_types. For example, we observe that there are a few data points for property_type O that have a very high price paid for only a small amount of square metres. The third and last visualization is able to plot two categorical variables against each other, namely estate_type vs. property_type. We immediately observe that if the estate_type is L, then there is a high probability that the property_type is F. Similar plots can be constructed for other variables. These visualizations plots are helpful to uncover the hidden relationships between multiple independent variables and the dependent variable.
+
+```{r, echo=FALSE}
+# investigating the variables in the data set propertyMedium
+str(propertyMedium)
+
+# importing the library skimr and displaying the summary statistics of all columns in propertyMedium
+library(skimr)
+skim(propertyMedium)
+
+# changing all character variables to factor variables
+propertyMedium[sapply(propertyMedium, is.character)] <- lapply(propertyMedium[sapply(propertyMedium, is.character)], as.factor)
+
+# visualize the numerical variables: price_paid vs. percent_mortgage
+library(ggplot2)
+library(tidyverse)
+ggplot(data = propertyMedium) + 
+  geom_point(mapping = aes(x = percent_mortgage, y = price_paid)) + 
+  facet_wrap(~ property_type, nrow = 2)
+
+# visualize the numerical variables: price_paid vs. square_metres
+ggplot(data = propertyMedium) + 
+  geom_point(mapping = aes(x = square_metres, y = price_paid)) + 
+  facet_wrap(~ property_type, nrow = 2)
+
+# visualize the categorical variable estate_type vs. property_type
+ggplot(propertyMedium, aes(x = estate_type, y = property_type, fill = estate_type)) + 
+  facet_wrap(~property_type, scales = "free_y", nrow = 2)+ 
+  geom_bar(stat = "identity")
+```
+
+## Question 2
+
+We take several steps to prepare the propertyMedium dataset for classification. First of all, all character variables are transformed to factor variables. We noted that there are several missing instances of the values of the variable estate_type. Since there are only 4 missing values, we simply impute the most common value, which is the 'F'. Finally, we apply normalization to the numerical variables to deal with the different scales.
+
+```{r, echo=FALSE}
+# changing all character variables to factor variables
+propertyMedium[sapply(propertyMedium, is.character)] <- lapply(propertyMedium[sapply(propertyMedium, is.character)], as.factor)
+
+# impute the most common value for the missing values of estate_type
+propertyMedium$estate_type[is.na(propertyMedium$estate_type)] <- 'F'
+
+# normalizing the numerical variables to a scale [0,1]
+normalize <- function(x) {return ((x - min(x)) / (max(x) - min(x)))}
+propertyMedium[,2:4] <- as.data.frame(lapply(propertyMedium[,2:4], normalize))
+```
+
+## Question 3
+
+We randomly sample from the propertyMedium dataset to obtain the datasets as defined in the question. The advantage of a reduced dataset is that algorithm will run more quickly, which will save time. On the other hand, the disadvantage of using a reduced dataset is that we throw away valuable information, which could lead to a reduction in performance. It is clear that there is a trade-off between performance and speed of the model. A possible criteria is to assess the width of confidence intervals of estimated parameters, which should not be too wide.
+
+```{r, echo=FALSE}
+library(Momocs)
+
+# sampling 30% from the propertyMedium dataset
+property30 <- propertyMedium %>% sample_n(size = 0.3*nrow(propertyMedium))
+
+# sampling 50% from the property30 dataset
+property15 <- property30 %>% sample_n(size = 0.5*nrow(property30))
+
+# sampling 33% from the property15 dataset
+property5 <- property15 %>% sample_n(size = 0.33*nrow(property15))
+```
+
+## Question 4
+
+We are aiming to build a tree classifier to classify the variable property_type. We build the same model on the datasets of different sizes, namely property30, property 15 and property5. The model is build using 5-fold cross-validation. Subsequently, we predict the property_type variable on the full train dataset propertyMedium with the different models. The predictions on the test data will happen only in Question 7. We are using the class accuracy measure to assess the performance of the tree classifier. The class accuracy simply states the percentage of the predictions that were in the right class. The model built on the largest set of data, property30, has an accuracy rate of 0.5618. This is slightly higher than the accuracy rate on the data property15, which is only 0.5439. However, the model with the highest accuracy rate is actually the model built on the smallest set of data, namely property 5. This model has an accuracy rate of 0.5948301. Hence, we prefer the model built on the data property5.
+
+```{r, echo=FALSE}
+# setting the seed value
+set.seed(123)
+
+# importing the required libraries
+library(caret)
+
+# set the response variable and the predictors
+yy <- c('property_type')
+xx <- c('price_paid', 'percent_mortgage', 'square_metres', 'year', 'area', 'new_build', 'estate_type', 'district', 'county', 'transaction_category')
+
+# building a tree model for the property30 data set
+tree_property30 <- caret::train(y = property30[,yy], x = property30[,xx],
+                                method = "rpart",
+                                trControl = trainControl(method = "cv", number = 5))
+propertyMedium$pred_property30 <- predict(tree_property30$finalModel, type ='class', newdata = propertyMedium[, c(yy, xx)])
+
+# building a tree model for the property15 data set
+tree_property15 <- caret::train(y = property15[,yy], x = property15[,xx],
+                                method = "rpart",
+                                trControl = trainControl(method = "cv", number = 5))
+propertyMedium$pred_property15 <- predict(tree_property15$finalModel, type ='class', newdata = propertyMedium[, c(yy, xx)])
+
+# building a tree model for the property5 data set
+tree_property5 <- caret::train(y = property5[,yy], x = property5[,xx],
+                                method = "rpart",
+                                trControl = trainControl(method = "cv", number = 5))
+propertyMedium$pred_property5 <- predict(tree_property5$finalModel, type ='class', newdata = propertyMedium[, c(yy, xx)])
+
+# comparing all three prediction models on the full train data
+table(propertyMedium$pred_property30)
+table(propertyMedium$pred_property15)
+table(propertyMedium$pred_property5)
+
+# comparing the accuracy of the predictions on the full train data
+mean(propertyMedium$property_type == propertyMedium$pred_property30) # 0.561751
+mean(propertyMedium$property_type == propertyMedium$pred_property15) # 0.5439239
+mean(propertyMedium$property_type == propertyMedium$pred_property5) # 0.5948301
+```
+
+## Question 5
+
+We have previously applied normalization to the numerical variables to scale them from 0 to 1. We must always normalize the data in order to create unbiased results from an instance-based classifier. We choose to use the K-Nearest Neighbors (KNN) algorithm. Again, we use 5-fold cross-validation and evaluate based on the accuracy of the model on the full train data (accuracy on the test data will be evaluated later). The model on property30 has an accuracy rate of 0.6420, while property15 and property5 have accuracy rates of 0.5864 and 0.5099, respectively. Hence, the highest accuracy rate is obtained by the most data. 
+
+We use Fisher's Exact Test to test if the samples come from a binomial distribution with a different parameter. The test shows a p-value close to 0, indicating that the parameter differs significantly between the two models. Hence, we prefer the model built on the biggest dataset, which is the model built on property30.
+
+```{r, echo=FALSE}
+# setting the seed value
+set.seed(123)
+
+# importing the required libraries
+library(caret)
+
+# set the response variable and the predictors
+yy <- c('property_type')
+xx <- c('price_paid', 'percent_mortgage', 'square_metres', 'year', 'area', 'new_build', 'estate_type', 'district', 'county', 'transaction_category')
+
+# we use 5-fold cross-validation as a trainControl
+ctrl <- trainControl(method="cv", number=5)
+
+# building a KNN model for the property30 data set
+knn_property30 <- train(property_type ~ price_paid + percent_mortgage + square_metres + year + area + new_build + estate_type + district + county + transaction_category, 
+              data = property30, 
+              method="knn", 
+              trControl=ctrl)
+knn_property30 
+
+# building a KNN model for the property15 data set
+knn_property15 <- train(property_type ~ price_paid + percent_mortgage + square_metres + year + area + new_build + estate_type + district + county + transaction_category, 
+              data = property15, 
+              method="knn", 
+              trControl=ctrl)
+knn_property15
+
+# building a KNN model for the property5 data set
+knn_property5 <- train(property_type ~ price_paid + percent_mortgage + square_metres + year + area + new_build + estate_type + district + county + transaction_category, 
+              data = property5, 
+              method="knn", 
+              trControl=ctrl)
+knn_property5
+
+# making predictions with the KNN models
+propertyMedium$pred_knn_property30 <- predict(knn_property30, type ='raw', newdata = propertyMedium[, c(yy, xx)])
+propertyMedium$pred_knn_property15 <- predict(knn_property15, type ='raw', newdata = propertyMedium[, c(yy, xx)])
+propertyMedium$pred_knn_property5 <- predict(knn_property5, type ='raw', newdata = propertyMedium[, c(yy, xx)])
+
+# comparing all three prediction models on the train data
+table(propertyMedium$pred_knn_property30)
+table(propertyMedium$pred_knn_property15)
+table(propertyMedium$pred_knn_property5)
+
+# comparing the accuracy of the predictions on the train data
+mean(propertyMedium$property_type == propertyMedium$pred_knn_property30) # 0.6419729
+mean(propertyMedium$property_type == propertyMedium$pred_knn_property15) # 0.5864118
+mean(propertyMedium$property_type == propertyMedium$pred_knn_property5) # 0.5098544
+
+# Fisher's Exact Test to test if the two samples come from a binomial distribution with a different parameter
+fisher.test(matrix(c(round(0.6419729*nrow(propertyMedium)), round((1-0.6419729)*nrow(propertyMedium)), round(0.5864118*nrow(propertyMedium)), round((1-0.5864118)*nrow(propertyMedium))), ncol=2))
+
+# The result of the test is significant, with a p-value of 0.
+```
+
+## Question 6
+
+The instance-based classifier does a better job in predicting on the full train data than the tree classifier. The accuracy is higher with 0.6420 compared to 0.5948 of the decision tree in question 4. We note that the KNN model, which was chosen as the instance-based classifier, needed more data to train effectively than the decision tree. The decision tree did not perform any better when feeding it more data, it actually did slightly worse on our data.
+
+## Question 7
+
+We take the same steps to prepare the propertyTest dataset for classification as we did for the train data.
+
+```{r, echo=FALSE}
+# changing all character variables to factor variables
+propertyTest[sapply(propertyTest, is.character)] <- lapply(propertyTest[sapply(propertyTest, is.character)], as.factor)
+
+# impute the most common value for the missing values of estate_type
+propertyTest$estate_type[is.na(propertyTest$estate_type)] <- 'F'
+
+# normalizing the numerical variables to a scale [0,1]
+normalize <- function(x) {return ((x - min(x)) / (max(x) - min(x)))}
+propertyTest[,2:4] <- as.data.frame(lapply(propertyTest[,2:4], normalize))
+```
+
+The best model that was trained previously was the KNN model on the property30 dataset, which we saved as the object knn_property30. We validate this model by testing it with the propertyTest dataset. 
+
+```{r}
+# making predictions with the KNN model on the property30 dataset
+propertyTest$pred_knn_property30 <- predict(knn_property30, type ='raw', newdata = propertyTest[, c(yy, xx)])
+
+# show the predictions on the test data
+table(propertyTest$pred_knn_property30)
+
+# calculate the accuracy of the predictions on the test data
+mean(propertyTest$property_type == propertyTest$pred_knn_property30) # 0.5999259
+```
+
+## Question 8
+
+We add a new attribute called house to property30 which states whether the property is a house (detached, semidetached or terraced) or not. We call this new dataset houseflat and subsequently remove the property_type attribute from it.
+
+```{r, echo=FALSE}
+# defining the new dataset that includes the property_house variable
+houseflat <- data.frame(property30, house = as.factor(property30$property_type %in% c("D", "S", "T")))
+houseflat$property_type <- NULL
+```
+
+## Question 9
+
+We perform the same procedure as previously for the property_type attribute, but now for the house attribute. We compare the tree-based classifier with the instance-based classifier. Again, we use the accuracy rate of the class predictions as the measure of interest. We find that the tree-based classifier has an accuracy rate of 0.955761, while the instance-based classifier has an accuracy rate of 0.9564213. Hence, the performance of both classifiers is fairly similar, although the instance-based classifier slightly outperforms the instance-based classifier.
+
+```{r, echo=FALSE}
+# setting the seed value
+set.seed(123)
+
+# importing the required libraries
+library(caret)
+
+# set the response variable and the predictors
+yy <- c('house')
+xx <- c('price_paid', 'percent_mortgage', 'square_metres', 'year', 'area', 'new_build', 'estate_type', 'district', 'county', 'transaction_category')
+
+# building a tree model for the houseflat data set
+tree_houseflat <- caret::train(y = houseflat[,yy], x = houseflat[,xx],
+                               method = "rpart",
+                               trControl = trainControl(method = "cv", number = 5))
+houseflat$pred_tree_houseflat <- predict(tree_houseflat$finalModel, type ='class', newdata = houseflat[, c(yy, xx)])
+
+# building a KNN model for the houseflat data set
+knn_houseflat <- train(house ~ price_paid + percent_mortgage + square_metres + year + area + new_build + estate_type + district + county + transaction_category, 
+              data = houseflat, 
+              method="knn", 
+              trControl=trainControl(method="cv", number=5))
+houseflat$pred_knn_houseflat <- predict(knn_houseflat, type ='raw', newdata = houseflat[, c(yy, xx)])
+
+# showing the results of the prediction models: tree vs KNN
+table(houseflat$pred_tree_houseflat)
+table(houseflat$pred_knn_houseflat)
+
+# evaluating the accuracy of the predictions: tree vs KNN
+mean(houseflat$house == houseflat$pred_tree_houseflat) # 0.955761
+mean(houseflat$house == houseflat$pred_knn_houseflat) # 0.9564213
+```
+
+## Question 10
+
+We use the k-means clustering algorithm via principal component analysis (PCA) to cluster the property30 dataset. It is a common practice to apply PCA before a clustering algorithm, because is believed that it improves the clustering results in practice (noise reduction).
+
+We only use the numerical attributes price_paid, percent_mortgage and square_metres in the clustering process, as they are the most appropriate given the distance metrics. We fit the k-means clustering algorithm after applying centering, scaling and principal component analysis. We first use the elbow method to determine a good value for the number of clusters k. Since this plot gives unclear results, we apply the silhouette method. This indicates that k = 3 is the optimal value. 
+
+The resulting clusters are correlated to the variables price_paid and square_metres, but not so much to percent_mortgage. Cluster 3 has higher values for price_paid compared to clusters 1 and 2, while cluster 1 has much lower values for square_metres compared to cluster 2 and 3.
+
+```{r}
+# apply centering, scaling and principal component analysis
+pca_property30 <- preProcess(property30[,2:4], method = c("pca"))
+
+# predict using the principle component analysis on the property30 data
+property30_v2 <- predict(pca_property30, newdata = property30)
+
+# For each value of k, k-means is applied.
+# we first use the Elbow Method to determine a good k
+k.max <- 12
+wss <- sapply(1:k.max, 
+              function(k){kmeans(property30_v2[, 11:13], k, nstart=25,iter.max = 15 )$tot.withinss})
+plot(1:k.max, wss,
+     type="b", pch = 19, frame = FALSE, 
+     xlab="Number of clusters K",
+     ylab="Total within-clusters sum of squares")
+
+# since the results are unclear, the average silhouette is calculated.
+library(cluster)
+set.seed(123)
+sil <- NULL
+for (i in 3:12) { 
+  res <- kmeans(property30_v2[, 11:13], centers = i, nstart = 25)
+  ss <- silhouette(res$cluster, dist(property30_v2))
+  sil[i-2] <- mean(ss[, 3])
+}
+
+# plotting the average silhouettes
+plot(3:12, sil, type="b", xlab="k= Number of Clusters", ylab="Average silhouette")
+
+# the silhouette plot reaches it maximum at k=3, which is therefore the optimal value of k
+
+# optimal model
+kmeans_model <- kmeans(property30_v2[, 11:13], centers = 3, nstart = 25)
+
+# predict the clusters from the model
+property30_v2$cluster <- kmeans_model$cluster
+
+# look at correlation for the variables: price_paid
+mean(property30$price_paid[property30_v2$cluster == 1])
+mean(property30$price_paid[property30_v2$cluster == 2])
+mean(property30$price_paid[property30_v2$cluster == 3])
+
+# look at correlation for the variables: percent_mortgage
+mean(property30$percent_mortgage[property30_v2$cluster == 1])
+mean(property30$percent_mortgage[property30_v2$cluster == 2])
+mean(property30$percent_mortgage[property30_v2$cluster == 3])
+
+# look at correlation for the variables: square_metres
+mean(property30$square_metres[property30_v2$cluster == 1])
+mean(property30$square_metres[property30_v2$cluster == 2])
+mean(property30$square_metres[property30_v2$cluster == 3])
+```
+## Question 11
+
+Association rules can be helpful for the propertyMedium dataset to unravel knowledge about the property markets and structure of the dataset. For example, the apriori algorithm can be used to understand the relationship between the attributes area and district. This is similar to the groceries dataset, where we investigated which set of groceries are often bought together. A difference between the datasets is that we have several numerical variables in propertyMedium, which cannot be used initially as the apriori algorithm only takes categorical variables. However, it is possible to use a binning strategy to categorize the numerical variables.
+
+## Question 12
+
+So far, we have only considered classification models built from a single model with the objective to classify the property_type variable. Obviously, different classification models may give different results for same problem. The idea of meta-learners is to combine multiple of these models to exploit the joint knowledge of all of them. The great advantage of these meta-learners is that they often improves predictive performance. One of the disadvantages is that the model can become increasingly hard to interpret when we combine the predictions of multiple models. 
+
+There are several methods that can be applied to build meta-learners for classification. The bagging approach is the simplest way to combine predictions. In bagging, each classifications model receives equal weight. The performance of a classifier can be improved by bagging, as it reduces the variance of the prediction. 
+
+Another method to improve the accuracy of class predictions is to use randomization. A lot of algorithms do not have a deterministic outcome, the results can depend for example on the seed. Another way is to randomly select some attributes in a decision tree. Randomization is widely applicable and can be combined with bagging (as happens for example with a random forest). 
+
+Finally, boosting is an iterative procedure whereby new models can be improved by the performance of previous models. For classification purposes, boosting is often used to give different models a different vote weight. Generally, boosting is more accurate than bagging, although it tends to overfit slightly.
